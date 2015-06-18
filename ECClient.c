@@ -8,10 +8,13 @@
 // NFO: https://billing.novotelecom.ru/billing/user/widget/api/
 // OLD: https://billing.novotelecom.ru/billing/user/api/?method=userInfo&login=$$$&password=###
 // NEW: https://api.novotelecom.ru/billing/?method=userInfo&login=$$$&passwordHash=###
-static TCHAR *strURLGetInfo = TEXT("https://api.novotelecom.ru/billing/?method=userInfo&login=%s&passwordHash=%s");
+// https://billing.novotelecom.ru/billing/user/data/widget/windows7/Novotelecom.gadget
+// "https://api.novotelecom.ru/billing/?method=userInfo&login="+login+"&passwordHash="+password+"&clientVersion=2"
+
+static TCHAR *strURLGetInfo = TEXT("https://api.novotelecom.ru/billing/?method=userInfo&login=%s&passwordHash=%s&clientVersion=2");
 static TCHAR *strURLBilling = TEXT("https://billing.novotelecom.ru");
 static TCHAR *strURLTheSite = TEXT("http://systools.losthost.org/?misc#ecclient");
-static TCHAR *strTheVersion = TEXT("ECClient v2.0");
+static TCHAR *strTheVersion = TEXT("ECClient v2.1");
 // filepath must start with ".\\" (current folder)
 // or it was moved in the %SystemRoot% (C:\Windows) by default
 static TCHAR *strConfigFile = TEXT(".\\ECClient.ini");
