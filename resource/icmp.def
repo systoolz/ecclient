@@ -1,0 +1,5 @@
+LIBRARY ICMP.dll
+EXPORTS
+  IcmpCreateFile@0
+  IcmpCloseHandle@4
+  IcmpSendEcho@32

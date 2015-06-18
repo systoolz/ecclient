@@ -1,0 +1,61 @@
+#undef RC_INVOKED
+#include <commctrl.h>
+#define RC_INVOKED 1
+#include <windows.h>
+
+#include "ECClient.h"
+
+#if __GNUC__ == 3
+// Control types
+// http://code.google.com/p/reactos-mirror/source/browse/trunk/reactos/include/pe.h?r=1748
+#define RCDATA    0x0A
+#define BUTTON    0x80
+#define EDIT      0x81
+#define STATIC    0x82
+#define LISTBOX   0x83
+#define SCROLLBAR 0x84
+#define COMBOBOX  0x85
+#endif
+
+1 ICON "ECClient.ico"
+1 24 "Manifest.xml"
+
+IDD_LOGINDLG DIALOG 0, 0, 200, 115
+STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Просмотр баланса лицевого счёта"
+LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
+FONT 8, "MS Sans Serif"
+{
+   CONTROL "Номер договора:", -1, STATIC, SS_LEFT | WS_CHILD | WS_VISIBLE, 10, 10, 70, 8 
+   CONTROL "", IDC_DLG_USERCODE, EDIT, ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 10, 20, 170, 13 
+   CONTROL "Пароль:", -1, STATIC, SS_LEFT | WS_CHILD | WS_VISIBLE, 10, 40, 70, 8 
+   CONTROL "", IDC_DLG_USERPASS, EDIT, ES_LEFT | ES_PASSWORD | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 10, 50, 170, 13 
+   CONTROL "Запомнить указанные данные", IDC_DLG_SAVEINFO, BUTTON, BS_AUTOCHECKBOX | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 10, 70, 120, 13 
+   CONTROL "OK", 1, BUTTON, BS_DEFPUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 55, 90, 45, 15 
+   CONTROL "Отмена", 2, BUTTON, BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 105, 90, 45, 15 
+}
+
+STRINGTABLE
+LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
+{
+  IDS_ERROR_INPUT, "Неверный номер договора и/или пароль!"
+  IDS_ERROR_NOSRV, "Ошибка соединения с сервером!"
+  IDS_TEXT_FORMAT, "Баланс (рублей): #balance$\nПорог отключения (рублей): #debetBound$\nДней абонентской платы (примерно): #days2Block$"
+}
+
+IDM_TRAYMENU MENU
+LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
+{
+  POPUP "Menu"
+  {
+    MENUITEM "Баланс", IDI_TRAY_CONTEXT_MENU_INFO
+    MENUITEM SEPARATOR
+    POPUP "Открыть"
+    {
+      MENUITEM "Статистика абонента", IDI_TRAY_CONTEXT_MENU_SITE
+      MENUITEM "Сайт программы", IDI_TRAY_CONTEXT_MENU_ROOT
+    }
+    MENUITEM SEPARATOR
+    MENUITEM "Выход", IDI_TRAY_CONTEXT_MENU_EXIT
+  }
+}
