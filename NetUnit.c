@@ -107,7 +107,12 @@ DWORD sz;
           INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE |
           INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID, 0);
         if (hReq) {
-          HttpSendRequest(hReq, TEXT("HTTP_X_REQUESTED_WITH: XMLHttpRequest\r\nConnection: Close"), (DWORD) -1, NULL, 0);
+          HttpSendRequest(hReq, TEXT(
+            // v2.2
+            "Accept: */*\r\n"\
+            "User-Agent: Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)\r\n"\
+            "Connection: Close"
+          ), (DWORD) -1, NULL, 0);
           buf = GetMem(MAX_BLOCK_SIZE);
           do {
             sz = 0;
