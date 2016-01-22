@@ -21,6 +21,7 @@
 // string
 #define IDS_ERROR_INPUT  1
 #define IDS_ERROR_NOSRV  2
+#define IDS_ERROR_NOTLS  3
 #define IDS_TEXT_FORMAT 10
 
 #endif

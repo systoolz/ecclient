@@ -107,26 +107,33 @@ DWORD sz;
           INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE |
           INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID, 0);
         if (hReq) {
-          HttpSendRequest(hReq, TEXT(
+          sz = HttpSendRequest(hReq, TEXT(
             // v2.2
             "Accept: */*\r\n"\
             "User-Agent: Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)\r\n"\
             "Connection: Close"
           ), (DWORD) -1, NULL, 0);
-          buf = GetMem(MAX_BLOCK_SIZE);
-          do {
-            sz = 0;
-            InternetReadFile(hReq, buf, MAX_BLOCK_SIZE, &sz);
-            if (sz) {
-              result = GrowMem(result, *len + sz + 1);
-              MoveMemory(&result[*len], buf, sz);
-              *len += sz;
+          // v2.3
+          if (sz) {
+            buf = GetMem(MAX_BLOCK_SIZE);
+            do {
+              sz = 0;
+              InternetReadFile(hReq, buf, MAX_BLOCK_SIZE, &sz);
+              if (sz) {
+                result = GrowMem(result, *len + sz + 1);
+                MoveMemory(&result[*len], buf, sz);
+                *len += sz;
+              }
+            } while (sz);
+            FreeMem(buf);
+            // add 0 at the end for ANSI text buffer data
+            if (result && *len) {
+              result[*len] = 0;
             }
-          } while (sz);
-          FreeMem(buf);
-          // add 0 at the end for ANSI text buffer data
-          if (result && *len) {
-            result[*len] = 0;
+          } else {
+            // v2.3
+            *len = (GetLastError() == ERROR_INTERNET_CONNECTION_RESET) ? 1 : 0;
+            // result == NULL, len == 1 - no TLS support (must be manually enabled)
           }
           InternetCloseHandle(hReq);
         }

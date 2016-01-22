@@ -14,7 +14,7 @@
 static TCHAR strURLGetInfo[] = TEXT("https://api.novotelecom.ru/billing/?method=userInfo&login=%s&passwordHash=%s&clientVersion=2");
 static TCHAR strURLTheSite[] = TEXT("http://systools.losthost.org/?misc#ecclient");
 static TCHAR strURLBilling[] = TEXT("https://billing.novotelecom.ru");
-static TCHAR strTheVersion[] = TEXT("ECClient v2.2");
+static TCHAR strTheVersion[] = TEXT("ECClient v2.3");
 // filepath must start with ".\\" (current folder)
 // or it was moved in the %SystemRoot% (C:\Windows) by default
 static TCHAR strConfigFile[] = TEXT(".\\ECClient.ini");
@@ -201,6 +201,9 @@ DWORD bsz, result;
           FreeMem(err);
         }
         FreeMem(page);
+      } else {
+        // v2.3
+        result += bsz;
       }
     }
   }
@@ -231,6 +234,10 @@ int res;
         break;
       case 2:
         MsgBox(wnd, MAKEINTRESOURCE(IDS_ERROR_NOSRV), MB_OK | MB_ICONERROR);
+        break;
+      // v2.3 - TLS not enabled
+      case 3:
+        MsgBox(wnd, MAKEINTRESOURCE(IDS_ERROR_NOTLS), MB_OK | MB_ICONERROR);
         break;
     }
   }
