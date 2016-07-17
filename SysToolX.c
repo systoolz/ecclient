@@ -3,20 +3,30 @@
 
 /* == MEMORY ROUTINES ====================================================== */
 
-void *GrowMem(void *lpPtr, DWORD dwSize) {
-  if (lpPtr == NULL) {
-    return(HeapAlloc(GetProcessHeap(), HEAP_NO_SERIALIZE | HEAP_ZERO_MEMORY, dwSize));
-  } else {
-    return(HeapReAlloc(GetProcessHeap(), HEAP_NO_SERIALIZE | HEAP_ZERO_MEMORY, lpPtr, dwSize));
+void FreeMem(void *block) {
+  if (block) {
+    LocalFree(block);
   }
 }
 
 void *GetMem(DWORD dwSize) {
-  return(GrowMem(NULL, dwSize));
+  return((void *) LocalAlloc(LPTR, dwSize));
 }
 
-BOOL FreeMem(void *lpPtr) {
-  return(HeapFree(GetProcessHeap(), HEAP_NO_SERIALIZE, lpPtr));
+void *GrowMem(void *block, DWORD dwSize) {
+  if (!dwSize) {
+    if (block) {
+      FreeMem(block);
+    }
+    block = NULL;
+  } else {
+    if (block) {
+      block = (void *) LocalReAlloc(block, dwSize, LMEM_MOVEABLE | LMEM_ZEROINIT);
+    } else {
+      block = GetMem(dwSize);
+    }
+  }
+  return(block);
 }
 
 /* == STRING ROUTINES ====================================================== */
@@ -24,9 +34,9 @@ BOOL FreeMem(void *lpPtr) {
 TCHAR *StDup(TCHAR *str) {
 TCHAR *result;
   result = NULL;
-  if (str != NULL) {
+  if (str) {
     result = STR_ALLOC(lstrlen(str));
-    if (result != NULL) {
+    if (result) {
       lstrcpy(result, str);
     }
   }
@@ -34,17 +44,20 @@ TCHAR *result;
 }
 
 void StTrim(TCHAR *str) {
-TCHAR *s;
-  if (str != NULL) {
-    // trim start
-    for (s = str; *s == TEXT(' '); s++);
-    MoveMemory(str, s, STR_SIZE(s));
-    // trim end
-    if (*s != 0) {
-      for (s += lstrlen(s) - 1; *s == TEXT(' '); s--);
-      s++;
-      *s = 0;
+DWORD i, s, e;
+  if (str) {
+    s = 0;
+    e = 0;
+    for (i = 0; str[i]; i++) {
+      if (str[i] != TEXT(' ')) {
+        if ((!s) && (str[s] == TEXT(' '))) {
+          s = i;
+        }
+        e = i + 1;
+      }
+      str[i - s] = str[i];
     }
+    str[e - s] = 0;
   }
 }
 
@@ -73,7 +86,9 @@ TCHAR *result;
 int sz;
   sz = GetWindowTextLength(wnd);
   result = STR_ALLOC(sz);
-  GetWindowText(wnd, result, sz + 1);
-  result[sz] = 0;
+  if (result) {
+    GetWindowText(wnd, result, sz + 1);
+    result[sz] = 0;
+  }
   return(result);
 }

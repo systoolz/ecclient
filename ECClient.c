@@ -14,7 +14,7 @@
 static TCHAR strURLGetInfo[] = TEXT("https://api.novotelecom.ru/billing/?method=userInfo&login=%s&passwordHash=%s&clientVersion=2");
 static TCHAR strURLTheSite[] = TEXT("http://systools.losthost.org/?misc#ecclient");
 static TCHAR strURLBilling[] = TEXT("https://billing.novotelecom.ru");
-static TCHAR strTheVersion[] = TEXT("ECClient v2.3");
+static TCHAR strTheVersion[] = TEXT("ECClient v2.4");
 // filepath must start with ".\\" (current folder)
 // or it was moved in the %SystemRoot% (C:\Windows) by default
 static TCHAR strConfigFile[] = TEXT(".\\ECClient.ini");
@@ -28,7 +28,7 @@ static UINT WM_TASKBARCREATED = 0;
 static NOTIFYICONDATA nid;
 
 #define ID_TRAY_APP_ICON 5000
-#define WM_TRAYICON WM_USER + 1
+#define WM_TRAYICON (WM_USER + 1)
 
 static TCHAR pass[33];
 static TCHAR code[15];
@@ -40,9 +40,9 @@ TCHAR *s;
   s = NULL;
   if (!HIWORD(lpText)) {
     s = LangLoadString(LOWORD(lpText));
-    if (!s) { s = StDup(strEmptyValue); }
+    lpText = s ? s : strEmptyValue;
   }
-  result = MessageBox(wnd, s ? s : lpText, strTheVersion, uType);
+  result = MessageBox(wnd, lpText, strTheVersion, uType);
   if (s) { FreeMem(s); }
   return(result);
 }
@@ -54,7 +54,8 @@ int i;
     // a lot of warnings goes here!
     if ((st[i] >= TEXT('0')) && (st[i] <= TEXT('9'))) { continue; }
     if (bhex) {
-      pass[i] = (TCHAR) (DWORD) CharLower(MAKEINTRESOURCE(st[i]));
+      // lowercase
+      st[i] |= 0x20; // v2.4
       if ((st[i] >= TEXT('a')) && (st[i] <= TEXT('f'))) { continue; }
     }
     // fallback through all - invalid character
@@ -167,12 +168,12 @@ TCHAR *x;
 }
 
 int ShowBalance(HWND wnd) {
-TCHAR *fmt, *buf, *page, *err;
+TCHAR *fmt, *page, *err;
+TCHAR buf[1024];
 DWORD bsz, result;
-  fmt = LangLoadString(IDS_TEXT_FORMAT);
-  buf = STR_ALLOC(1024);
   result = 3;
-  if (fmt && buf) {
+  fmt = LangLoadString(IDS_TEXT_FORMAT);
+  if (fmt) {
     result = 1;
     ValidateSettings();
     if (CONFIG_OK) {
@@ -180,6 +181,8 @@ DWORD bsz, result;
       bsz = 0;
       wsprintf(buf, strURLGetInfo, code, pass);
       page = (TCHAR *) HTTPSGetContent(buf, &bsz);
+      // secure
+      ZeroMemory(buf, STR_BYTES(1024)); // v2.4
 #ifdef UNICODE
       so you want an unicode build huh
       well you can get it just dont forget to
@@ -206,9 +209,8 @@ DWORD bsz, result;
         result += bsz;
       }
     }
+    FreeMem(fmt);
   }
-  if (buf) { FreeMem(buf); }
-  if (fmt) { FreeMem(fmt); }
   return(result);
 }
 
@@ -263,8 +265,39 @@ void InitNotifyIconData(HWND wnd) {
   nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   nid.uCallbackMessage = WM_TRAYICON;
   nid.hIcon  = (HICON) GetClassLong(wnd, GCL_HICON);
-  dwip = GetExternalIPAddr(&strURLBilling[8]);
-  UpdateNetworkInfo();
+}
+
+// v2.4
+// PATCH: after working with the main program window
+// it will be still visible for short time by Alt+Tab
+void HideWnd(HWND wnd) {
+  ShowWindow(wnd, SW_SHOWNORMAL);
+  ShowWindow(wnd, SW_HIDE);
+}
+
+// v2.4
+void DoNotifyIcon(DWORD dwMessage, PNOTIFYICONDATA lpdata) {
+DWORD i, tk;
+  // PATCH: sometimes icon didn't appears due to Windows timeout bug
+  // http://www.geoffchappell.com/notes/windows/shell/missingicons.htm
+  // 20*3 = 1 minute
+  // if after one minute the icon still can't be created
+  // it looks like something really wrong with the system
+  // and so we must stop trying
+  // NOTE: deleting icon may stuck as well!
+  for (i = 0; i < 20; i++) {
+    // you can't add more than one icon with the same uID
+    // that's why no need to call NIM_DELETE in this loop
+    tk = GetTickCount();
+    Shell_NotifyIcon(dwMessage, lpdata);
+    tk = GetTickCount() - tk;
+    // "First is a timeout of 4 seconds, raised to 7 in Windows Vista."
+    // (c) link above
+    // 3 seconds should be enough
+    if (tk <= 3000) {
+      break;
+    }
+  }
 }
 
 LRESULT CALLBACK WndProc(HWND wnd, UINT umsg, WPARAM wparm, LPARAM lparm) {
@@ -272,26 +305,32 @@ POINT pt;
   switch (umsg) {
 
     case WM_CREATE:
+      dwip = GetExternalIPAddr(&strURLBilling[8]);
       InitNotifyIconData(wnd);
-      Shell_NotifyIcon(NIM_ADD, &nid);
+      UpdateNetworkInfo();
+      DoNotifyIcon(NIM_ADD, &nid);
       break;
 
     case WM_TRAYICON:
-      // mouseover event - update info
       if (wparm == ID_TRAY_APP_ICON) {
+        // mouseover event - update info
         UpdateNetworkInfo();
-        Shell_NotifyIcon(NIM_MODIFY, &nid);
-      }
-      // redirect this message to the menu handler below
-      // so ShowUserBalance() was not called in different places
-      if (lparm == WM_LBUTTONDBLCLK) {
-        PostMessage(wnd, WM_COMMAND, MAKELONG(IDI_TRAY_CONTEXT_MENU_INFO, 0), 0);
-      }
-      // show popup menu
-      if (lparm == WM_RBUTTONDOWN) {
-        SetForegroundWindow(wnd);
-        GetCursorPos(&pt);
-        TrackPopupMenu(GetSubMenu(GetMenu(wnd), 0), 0, pt.x, pt.y, 0, wnd, NULL);
+        DoNotifyIcon(NIM_MODIFY, &nid);
+        // click
+        switch (lparm) {
+          case WM_LBUTTONDBLCLK:
+            // redirect this message to the menu handler below
+            // so ShowUserBalance() was not called in different places
+            PostMessage(wnd, WM_COMMAND, MAKELONG(IDI_TRAY_CONTEXT_MENU_INFO, 0), 0);
+            break;
+          case WM_RBUTTONDOWN:
+            // show popup menu
+            SetForegroundWindow(wnd);
+            GetCursorPos(&pt);
+            TrackPopupMenu(GetSubMenu(GetMenu(wnd), 0), 0, pt.x, pt.y, 0, wnd, NULL);
+            HideWnd(wnd); // v2.4
+            break;
+        }
       }
       // do not fallback this message to the system tray
       return(0);
@@ -310,17 +349,19 @@ POINT pt;
           CoInitialize(NULL);
           ShellExecute(0, TEXT("open"),
             (LOWORD(wparm) == IDI_TRAY_CONTEXT_MENU_SITE) ? strURLBilling : strURLTheSite,
-            NULL, NULL, SW_SHOWNORMAL);
+            NULL, NULL, SW_SHOWNORMAL
+          );
           CoUninitialize();
           break;
         case IDI_TRAY_CONTEXT_MENU_INFO:
           ShowUserBalance(wnd);
+          HideWnd(wnd); // v2.4
           break;
       }
       break;
 
     case WM_DESTROY:
-      Shell_NotifyIcon(NIM_DELETE, &nid);
+      DoNotifyIcon(NIM_DELETE, &nid);
       PostQuitMessage(0);
       return(0);
       break;
@@ -329,7 +370,7 @@ POINT pt;
   // Explorer.exe dies and rises like a Phoenix from the ashes again
   // BTW, you can't move this code to above switch(), cause switch() works only with constants
   if (umsg == WM_TASKBARCREATED) {
-    Shell_NotifyIcon(NIM_ADD, &nid);
+    DoNotifyIcon(NIM_ADD, &nid);
   }
   return(DefWindowProc(wnd, umsg, wparm, lparm));
 }
@@ -349,35 +390,39 @@ HWND hw;
   // http://msdn.microsoft.com/en-US/library/vstudio/bb384843.aspx
   ZeroMemory(&wcex, sizeof(wcex));
   wcex.cbSize        = sizeof(wcex);
-  wcex.lpszClassName = TEXT("ECClientWndClass");
-  wcex.hInstance     = GetModuleHandle(NULL);
   wcex.lpfnWndProc   = &WndProc;
-  wcex.style         = CS_HREDRAW | CS_VREDRAW;
+  wcex.hInstance     = GetModuleHandle(NULL);
+  wcex.lpszClassName = TEXT("ECClientWndClass");
+  wcex.lpszMenuName  = MAKEINTRESOURCE(IDM_TRAYMENU);
   wcex.hIcon         = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(1));
+#ifdef SHOW_MAIN_WND
   wcex.hCursor       = LoadCursor(NULL, IDC_ARROW);
   wcex.hbrBackground = (HBRUSH) (COLOR_WINDOW + 1);
-  wcex.lpszMenuName  = MAKEINTRESOURCE(IDM_TRAYMENU);
+  wcex.style         = CS_HREDRAW | CS_VREDRAW;
+#endif
 
   // only one instance allowed
-  hw = FindWindow(wcex.lpszClassName, NULL);
+  hw = FindWindow(wcex.lpszClassName, wcex.lpszClassName);
   if (hw) {
     SendMessage(hw, WM_CLOSE, 0, 0);
   }
 
   // class registration failed
   if (!RegisterClassEx(&wcex)) {
-    ExitProcess(2);
+    ExitProcess(1);
   }
 
   // create window
   CreateWindowEx(
     0, wcex.lpszClassName, wcex.lpszClassName,
-    WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX
-//    | WS_VISIBLE
-    ,
+#ifdef SHOW_MAIN_WND
+    WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
     (GetSystemMetrics(SM_CXSCREEN) - 320) / 2,
     (GetSystemMetrics(SM_CYSCREEN) - 240) / 2,
     320, 240,
+#else
+   0, 0, 0, 0, 0,
+#endif
     0, 0,
     wcex.hInstance, NULL
   );

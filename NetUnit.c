@@ -56,15 +56,13 @@ DWORD i;
         i = 16;
         if (CryptGetHashParam(hHash, HP_HASHVAL, md5, &i, 0)) {
           result = STR_ALLOC(32);
-          for (i = 0; i < 32; i++) {
-            result[i] = ((i&1) ? md5[i/2] : (md5[i/2] >> 4)) & 0x0F;
-            if ((result[i] >= 0) && (result[i] <= 9)) {
-              result[i] += TEXT('0');
-            } else {
-              result[i] += TEXT('a') - 10;
+          if (result) {
+            for (i = 0; i < 32; i++) {
+              result[i] = (md5[i/2] >> (4*((i&1)^1))) & 0x0F;
+              result[i] += (result[i] < 10) ? TEXT('0') : (TEXT('a') - 10);
             }
+            result[32] = 0;
           }
-          result[32] = 0;
         }
       }
       CryptDestroyHash(hHash);
@@ -121,7 +119,7 @@ DWORD sz;
               InternetReadFile(hReq, buf, MAX_BLOCK_SIZE, &sz);
               if (sz) {
                 result = GrowMem(result, *len + sz + 1);
-                MoveMemory(&result[*len], buf, sz);
+                CopyMemory(&result[*len], buf, sz);
                 *len += sz;
               }
             } while (sz);
@@ -151,15 +149,17 @@ DWORD GetHostIPAddr(TCHAR *host) {
 WSADATA ws;
 HOSTENT *hs;
 DWORD result;
-  WSAStartup(MAKEWORD(1, 1), &ws);
-  result = inet_addr(host);
-  if (result == INADDR_NONE) {
-    hs = gethostbyname(host);
-    if (hs) {
-      result = *(DWORD *) hs->h_addr_list[0];
+  result = INADDR_NONE;
+  if (!WSAStartup(MAKEWORD(1, 1), &ws)) {
+    result = inet_addr(host);
+    if (result == INADDR_NONE) {
+      hs = gethostbyname(host);
+      if (hs) {
+        result = *(DWORD *) hs->h_addr_list[0];
+      }
     }
+    WSACleanup();
   }
-  WSACleanup();
   return(result);
 }
 
@@ -272,13 +272,18 @@ TCHAR *result, *sin, *sout;
   sout = FmtWithSpaces(dwout);
   if (result && sin && sout) {
     wsprintf(result, TEXT("IP: %s\nSend: %s\nRecv: %s"), inet_ntoa(*(struct in_addr *) &dwip), sout, sin);
+  } else {
+    // v2.4
+    if (result) { FreeMem(result); }
+    result = NULL;
   }
   if (sin)  { FreeMem(sin);  }
   if (sout) { FreeMem(sout); }
   return(result);
 }
 
-#if __GNUC__ == 3
+//#if __GNUC__ == 3
+#ifndef _ICMP_INCLUDED_
 // http://www.mingw.org/wiki/CreateImportLibraries
 extern HANDLE WINAPI IcmpCreateFile(void);
 extern BOOL   WINAPI IcmpCloseHandle(HANDLE IcmpHandle);
@@ -301,7 +306,7 @@ DWORD dwip, result;
 BYTE buf[sizeof(ICMP_ECHO_REPLY) + 8*4];
   result = 0;
   dwip = GetHostIPAddr(host);
-  if (dwip) {
+  if (dwip != INADDR_NONE) {
     hicmp = IcmpCreateFile();
     if (hicmp != INVALID_HANDLE_VALUE) {
       ZeroMemory(buf, sizeof(ICMP_ECHO_REPLY) + 8*4);
