@@ -138,7 +138,7 @@ TCHAR *x;
   if (buf && fmt && page) {
     i = 0;
     j = 0;
-    while (fmt[i] && (i < 1024)) {
+    while ((i < 1024) && fmt[i]) {
       i++;
       if (fmt[i - 1] == TEXT('#')) {
         k = 0;
