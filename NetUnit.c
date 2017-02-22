@@ -100,7 +100,7 @@ DWORD sz;
       hConn = InternetConnect(hOpen, uc.lpszHostName, INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
       if (hConn) {
         // request
-        hReq = HttpOpenRequest(hConn, NULL, uc.lpszUrlPath, TEXT("1.0"), NULL, NULL,
+        hReq = HttpOpenRequest(hConn, NULL, uc.lpszUrlPath, TEXT("HTTP/1.0"), NULL, NULL, // v2.5
           INTERNET_FLAG_NO_AUTO_REDIRECT | INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES |
           INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE |
           INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID, 0);
