@@ -13,9 +13,10 @@ int i, len;
   // sanity check
   if (name && data) {
     if (*name && *data) {
-      tmp = StDup(name);
+      len = lstrlen(name);
+      tmp = STR_ALLOC(len);
       if (tmp) {
-        len = lstrlen(name) + 1;
+        len++;
         i = 0;
         while (data[i]) {
           i++;
@@ -43,41 +44,156 @@ int i, len;
   return(result);
 }
 
-TCHAR *CalcMD5Hash(BYTE *buf, DWORD sz) {
-HCRYPTPROV hProv;
-HCRYPTHASH hHash;
-TCHAR *result;
-BYTE md5[16];
-DWORD i;
-  result = NULL;
-  if (CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
-    if (CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
-      if (CryptHashData(hHash, buf, sz, 0)) {
-        i = 16;
-        if (CryptGetHashParam(hHash, HP_HASHVAL, md5, &i, 0)) {
-          result = STR_ALLOC(32);
-          if (result) {
-            for (i = 0; i < 32; i++) {
-              result[i] = (md5[i/2] >> (4*((i&1)^1))) & 0x0F;
-              result[i] += (result[i] < 10) ? TEXT('0') : (TEXT('a') - 10);
-            }
-            result[32] = 0;
-          }
+// v2.6 CCHAR since only ANSI / UTF-8 allowed to escape
+DWORD RawURLEncode(CCHAR *p, CCHAR *u, DWORD us) {
+DWORD result, i;
+BYTE mask[256];
+CCHAR *s;
+  result = 1;
+  if (p && u && us) {
+    // fill buffer (no static data)
+    ZeroMemory(mask, 256);
+    for (i = '0'; i <= '9'; i++) { mask[i] = 1; }
+    for (i = 'A'; i <= 'Z'; i++) { mask[i] = 1; }
+    for (i = 'a'; i <= 'z'; i++) { mask[i] = 1; }
+    mask['-'] = 1;
+    mask['.'] = 1;
+    mask['_'] = 1;
+    mask['~'] = 1;
+    // check output buffer size
+    i = 0;
+    for (s = p; *s; s++) {
+      i += mask[(BYTE) *s] ? 1 : 3;
+    }
+    // output buffer too small
+    result = 2;
+    if (i < us) {
+      for (s = p; *s; s++) {
+        if (mask[(BYTE) *s]) {
+          *u = *s; u++;
+        } else {
+          *u = '%'; u++;
+          *u = (((BYTE) *s) >> 4);
+          *u += (*u < 10) ? '0' : ('A' - 10);
+          u++;
+          *u = (((BYTE) *s) & 0x0F);
+          *u += (*u < 10) ? '0' : ('A' - 10);
+          u++;
         }
       }
-      CryptDestroyHash(hHash);
+      // null char
+      *u = 0;
+      result = 0;
     }
-    CryptReleaseContext(hProv, 0);
   }
   return(result);
 }
 
-// it's not very optimized code but good for small internet pages
-#define MAX_BLOCK_SIZE 512
-BYTE *HTTPSGetContent(TCHAR *url, DWORD *len) {
+// v2.6
+// https://rsdn.org/forum/src/2105333.hot
+DWORD Base64En(BYTE *p, DWORD ps, TCHAR *u, DWORD us) {
+DWORD result, k, i;
+TCHAR list[65];
+  // invalid arguments
+  result = 1;
+  if (p && ps && u && us) {
+    // output buffer too small
+    result = 2;
+    if (us >= ((((ps - 1) / 3) + 1) * 4) + 1) {
+      // fill buffer (no static data)
+      for (i = 0; i < 26; i++) { list[i] = TEXT('A') + i; }
+      for (i = 0; i < 26; i++) { list[i + 26] = TEXT('a') + i; }
+      for (i = 0; i < 10; i++) { list[i + 52] = TEXT('0') + i; }
+      list[62] = TEXT('+');
+      list[63] = TEXT('/');
+      list[64] = TEXT('=');
+      // encode buffer
+      while (ps > 2) {
+        k = (p[0] << 16) | (p[1] << 8) | (p[2]);
+        p += 3;
+        ps -= 3;
+        *u = list[(k >> 18) & 0x3F]; u++;
+        *u = list[(k >> 12) & 0x3F]; u++;
+        *u = list[(k >>  6) & 0x3F]; u++;
+        *u = list[(k      ) & 0x3F]; u++;
+      }
+      // tail bytes
+      if (ps) {
+        k = (*p << 16); p++;
+        if (ps > 1) { k |= (*p << 8); }
+        *u = list[(k >> 18) & 0x3F]; u++;
+        *u = list[(k >> 12) & 0x3F]; u++;
+        if (ps > 1) { *u = list[(k >>  6) & 0x3F]; u++; }
+        if (ps == 1) { *u = list[64]; u++; }
+        *u = list[64]; u++;
+      }
+      // null terminator
+      *u = 0;
+      // no errors
+      result = 0;
+    }
+  }
+  return(result);
+}
+
+#define HASH_LEN 20
+DWORD CalcSHAHash(BYTE *buf, DWORD sz, BYTE *hash) {
+HCRYPTPROV hProv;
+HCRYPTHASH hHash;
+DWORD result;
+  result = 1;
+  if (buf && sz && hash) {
+    result = 2;
+    if (CryptAcquireContext(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
+      result = 3;
+      if (CryptCreateHash(hProv, CALG_SHA, 0, 0, &hHash)) {
+        result = 4;
+        if (CryptHashData(hHash, buf, sz, 0)) {
+          result = 5;
+          sz = HASH_LEN;
+          if (CryptGetHashParam(hHash, HP_HASHVAL, hash, &sz, 0)) {
+            result = 0;
+          }
+        }
+        CryptDestroyHash(hHash);
+      }
+      CryptReleaseContext(hProv, 0);
+    }
+  }
+  return(result);
+}
+
+#define BASE_LEN (((((HASH_LEN - 1) / 3) + 1) * 4) + 1)
+DWORD GetEncodedPassword(TCHAR *p, TCHAR *u) {
+BYTE hash[HASH_LEN];
+TCHAR s[BASE_LEN];
+DWORD result;
+  #ifdef UNICODE
+  convert to utf8 plz ktx by
+  #endif
+  result = 1;
+  if (p && u && *p) {
+    result = 20 + CalcSHAHash((BYTE *) p, lstrlen(p), hash);
+    // hash created
+    if (result == 20) {
+      result = 30 + Base64En(hash, HASH_LEN, s, BASE_LEN);
+      // Base64 encoded
+      if (result == 30) {
+        // (28 * 3) + 1 = worst case: 85 chars long
+        result = RawURLEncode(s, u, ((BASE_LEN - 1) * 3) + 1);
+        result += result ? 40 : 0;
+      }
+    }
+  }
+  return(result);
+}
+
+// it's not very optimized code but good for small Internet pages
+#define MAX_BLOCK_SIZE 1024
+BYTE *HTTPGetContent(TCHAR *url, DWORD *len) {
 HINTERNET hOpen, hConn, hReq;
 URL_COMPONENTS uc;
-BYTE *result, *buf;
+BYTE *result, *buf, *r;
 DWORD sz;
   // init result
   result = NULL;
@@ -92,46 +208,74 @@ DWORD sz;
   uc.dwUrlPathLength  = sz;
   sz = InternetCrackUrl(url, lstrlen(url), 0, &uc);
   // sanity check
-  if (sz && (uc.nScheme == INTERNET_SCHEME_HTTPS) && uc.lpszHostName && uc.lpszUrlPath && uc.lpszHostName[0] && uc.lpszUrlPath[0]) {
+  if (sz && ((uc.nScheme == INTERNET_SCHEME_HTTPS) || (uc.nScheme == INTERNET_SCHEME_HTTP)) &&
+      uc.lpszHostName && uc.lpszUrlPath && uc.lpszHostName[0] && uc.lpszUrlPath[0]
+  ) {
     // open
     hOpen = InternetOpen(NULL, INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
     if (hOpen) {
       // connect
-      hConn = InternetConnect(hOpen, uc.lpszHostName, INTERNET_DEFAULT_HTTPS_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+      sz = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? INTERNET_DEFAULT_HTTPS_PORT : INTERNET_DEFAULT_HTTP_PORT;
+      hConn = InternetConnect(hOpen, uc.lpszHostName, sz, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
       if (hConn) {
         // request
-        hReq = HttpOpenRequest(hConn, NULL, uc.lpszUrlPath, TEXT("HTTP/1.0"), NULL, NULL, // v2.5
-          INTERNET_FLAG_NO_AUTO_REDIRECT | INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES |
-          INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE |
-          INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID, 0);
+        sz = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? (INTERNET_FLAG_SECURE | INTERNET_FLAG_IGNORE_CERT_CN_INVALID | INTERNET_FLAG_IGNORE_CERT_DATE_INVALID) : 0;
+        hReq = HttpOpenRequest(hConn, NULL, uc.lpszUrlPath, HTTP_VERSION, NULL, NULL,
+          INTERNET_FLAG_NO_UI | INTERNET_FLAG_NO_COOKIES | // INTERNET_FLAG_NO_AUTO_REDIRECT |
+          INTERNET_FLAG_NO_CACHE_WRITE | sz, 0);
         if (hReq) {
-          sz = HttpSendRequest(hReq, TEXT(
-            // v2.2
-            "Accept: */*\r\n"\
-            "User-Agent: Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.1; WOW64; Trident/6.0)\r\n"\
-            "Connection: Close"
-          ), (DWORD) -1, NULL, 0);
-          // v2.3
+          // HttpSendRequest() didn't work with -1 as dwHeadersLength in Unicode build:
+          // GetLastError() == 12150 ERROR_HTTP_HEADER_NOT_FOUND
+          // https://msdn.microsoft.com/en-us/library/windows/desktop/aa384247.aspx
+          sz = HttpSendRequest(hReq, TEXT("Connection: Close"), 17, NULL, 0);
           if (sz) {
-            buf = GetMem(MAX_BLOCK_SIZE);
-            do {
-              sz = 0;
-              InternetReadFile(hReq, buf, MAX_BLOCK_SIZE, &sz);
-              if (sz) {
-                result = GrowMem(result, *len + sz + 1);
-                CopyMemory(&result[*len], buf, sz);
-                *len += sz;
+            // check for Content-Length
+            sz = sizeof(len[0]);
+            uc.dwStructSize = 0;
+            if (HttpQueryInfo(hReq, HTTP_QUERY_CONTENT_LENGTH | HTTP_QUERY_FLAG_NUMBER, len, &sz, &uc.dwStructSize)) {
+              result = (BYTE *) GetMem(*len + 1);
+              if (result) {
+                sz = 0;
+                InternetReadFile(hReq, result, *len, &sz);
               }
-            } while (sz);
-            FreeMem(buf);
-            // add 0 at the end for ANSI text buffer data
+            } else {
+              // length unknown
+              buf = GetMem(MAX_BLOCK_SIZE);
+              if (buf) {
+                do {
+                  sz = 0;
+                  InternetReadFile(hReq, buf, MAX_BLOCK_SIZE, &sz);
+                  if (sz) {
+                    r = GrowMem(result, *len + sz + 1);
+                    if (r) {
+                      result = r;
+                      CopyMemory(&result[*len], buf, sz);
+                    } else {
+                      // not enough memory
+                      FreeMem(result);
+                      result = NULL;
+                      *len = 2;
+                      break;
+                    }
+                    *len += sz;
+                  }
+                } while (sz);
+                FreeMem(buf);
+              }
+            }
+            // add 0 at the end for text buffer data
             if (result && *len) {
               result[*len] = 0;
             }
           } else {
-            // v2.3
-            *len = (GetLastError() == ERROR_INTERNET_CONNECTION_RESET) ? 1 : 0;
-            // result == NULL, len == 1 - no TLS support (must be manually enabled)
+            // Windows XP, TLS not enabled in Internet Explorer
+            if (uc.nScheme == INTERNET_SCHEME_HTTPS) {
+              *len = GetLastError();
+              *len = (
+                (*len == ERROR_INTERNET_CANNOT_CONNECT) ||
+                (*len == ERROR_INTERNET_CONNECTION_RESET)
+              ) ? 1 : 0;
+            }
           }
           InternetCloseHandle(hReq);
         }
@@ -233,7 +377,7 @@ DWORD i, k;
     k = 0;
     do {
       i--;
-      result[i] = TEXT('0') + (value%10);
+      result[i] = TEXT('0') + (value % 10);
       value /= 10;
       k++;
       if (value && i && (k >= 3)) {
@@ -267,7 +411,7 @@ TCHAR *result, *sin, *sout;
   ) {
     dwip = ExtHost;
   }
-  result = STR_ALLOC(1024);
+  result = STR_ALLOC(64);
   sin = FmtWithSpaces(dwin);
   sout = FmtWithSpaces(dwout);
   if (result && sin && sout) {

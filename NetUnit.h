@@ -2,8 +2,8 @@
 #define __NETUNIT_H
 
 TCHAR *XMLGetValue(TCHAR *name, TCHAR *data);
-TCHAR *CalcMD5Hash(BYTE *buf, DWORD sz);
-BYTE *HTTPSGetContent(TCHAR *url, DWORD *len);
+DWORD GetEncodedPassword(TCHAR *p, TCHAR *u);
+BYTE *HTTPGetContent(TCHAR *url, DWORD *len);
 TCHAR *GetNetStat(DWORD ExtHost);
 DWORD GetExternalIPAddr(TCHAR *host);
 

@@ -2,62 +2,90 @@
 #include <commctrl.h>
 #define RC_INVOKED 1
 #include <windows.h>
-
+#include <richedit.h>
 #include "ECClient.h"
 
-#if __GNUC__ == 3
-// Control types
-// http://code.google.com/p/reactos-mirror/source/browse/trunk/reactos/include/pe.h?r=1748
-#define RCDATA    0x0A
-#define BUTTON    0x80
-#define EDIT      0x81
-#define STATIC    0x82
-#define LISTBOX   0x83
-#define SCROLLBAR 0x84
-#define COMBOBOX  0x85
+#ifndef IDC_STATIC
+#define IDC_STATIC (-1)
 #endif
 
 1 ICON "ECClient.ico"
 1 24 "Manifest.xml"
 
-IDD_LOGINDLG DIALOG 0, 0, 200, 115
-STYLE DS_MODALFRAME | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+#define R_CAPTION "ECClient"
+#define R_VERSION "2.6"
+#define R_INTNAME "ECClient"
+
+1 VERSIONINFO
+FILEVERSION 2,6,0,0
+PRODUCTVERSION 2,6,0,0
+FILETYPE 1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904E4"
+    BEGIN
+      VALUE "CompanyName", "SysTools"
+      VALUE "FileDescription", R_CAPTION
+      VALUE "FileVersion", R_VERSION
+      VALUE "LegalCopyright", "\xA9 SysTools 2010-2018"
+      VALUE "OriginalFilename", R_INTNAME ".exe"
+      VALUE "InternalName", R_INTNAME
+      VALUE "ProductName", R_CAPTION
+      VALUE "ProductVersion", R_VERSION
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x419, 1251
+  END
+END
+
+LANGUAGE 25, SUBLANG_DEFAULT
+100 DIALOG 0, 0, 200, 115
+STYLE DS_CENTER | DS_MODALFRAME | DS_SETFONT | WS_CAPTION | WS_POPUP | WS_SYSMENU
 CAPTION "Просмотр баланса лицевого счёта"
-LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
 FONT 8, "MS Sans Serif"
-{
-   CONTROL "Номер договора:", -1, STATIC, SS_LEFT | WS_CHILD | WS_VISIBLE, 10, 10, 70, 8 
-   CONTROL "", IDC_DLG_USERCODE, EDIT, ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 10, 20, 170, 13 
-   CONTROL "Пароль:", -1, STATIC, SS_LEFT | WS_CHILD | WS_VISIBLE, 10, 40, 70, 8 
-   CONTROL "", IDC_DLG_USERPASS, EDIT, ES_LEFT | ES_PASSWORD | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 10, 50, 170, 13 
-   CONTROL "Запомнить указанные данные", IDC_DLG_SAVEINFO, BUTTON, BS_AUTOCHECKBOX | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 10, 70, 120, 13 
-   CONTROL "OK", 1, BUTTON, BS_DEFPUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 55, 90, 45, 15 
-   CONTROL "Отмена", 2, BUTTON, BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 105, 90, 45, 15 
-}
+BEGIN
+  LTEXT         "Номер договора:", IDC_STATIC, 10, 10, 70, 8
+  EDITTEXT      IDC_DLG_USERCODE, 10, 20, 170, 13, ES_AUTOHSCROLL
+  LTEXT         "Пароль:", IDC_STATIC, 10, 40, 70, 8
+  EDITTEXT      IDC_DLG_USERPASS, 10, 50, 170, 13, ES_AUTOHSCROLL | ES_PASSWORD
+  AUTOCHECKBOX  "Запомнить указанные данные", IDC_DLG_SAVEINFO, 10, 70, 120, 13
+  DEFPUSHBUTTON "OK", IDOK, 55, 90, 45, 15
+  PUSHBUTTON    "Отмена", IDCANCEL, 105, 90, 45, 15
+END
 
 STRINGTABLE
 LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
-{
+BEGIN
+  IDS_PROGRAM_VER, R_CAPTION " v" R_VERSION
   IDS_ERROR_INPUT, "Неверный номер договора и/или пароль!"
   IDS_ERROR_NOSRV, "Ошибка соединения с сервером!"
   IDS_ERROR_NOTLS, "Для соединения с сервером необходимо включить TLS!\n"\
                    "Пуск - Настройка - Панель управления - Свойства обозревателя - Дополнительно - TLS 1.0"
-  IDS_TEXT_FORMAT, "Баланс (рублей): #balance$\nПорог отключения (рублей): #debetBound$\nДней абонентской платы (примерно): #days2Block$"
-}
+  IDS_ERROR_NOHSH, "Ошибка при рассчёте хеша: %lu"
+  IDS_TEXT_FORMAT, "Баланс (рублей): #balance$\nДней абонентской платы (примерно): #balanceInfo$"
+  IDS_API_SITEROOT, "https://api.novotelecom.ru/user/v1/"
+  IDS_API_LOGINADR, "login?userName=%s&password=%s"
+  IDS_API_DINFOADR, "getDynamicInfo?token=%s"
+  IDS_LNK_STATPAGE, "https://billing.novotelecom.ru"
+  IDS_LNK_HOMEPAGE, "http://systools.losthost.org/?misc#ecclient"
+END
 
 IDM_TRAYMENU MENU
 LANGUAGE LANG_RUSSIAN, SUBLANG_DEFAULT
-{
+BEGIN
   POPUP "Menu"
-  {
+  BEGIN
     MENUITEM "Баланс", IDI_TRAY_CONTEXT_MENU_INFO
     MENUITEM SEPARATOR
     POPUP "Открыть"
-    {
+    BEGIN
       MENUITEM "Статистика абонента", IDI_TRAY_CONTEXT_MENU_SITE
       MENUITEM "Сайт программы", IDI_TRAY_CONTEXT_MENU_ROOT
-    }
+    END
     MENUITEM SEPARATOR
     MENUITEM "Выход", IDI_TRAY_CONTEXT_MENU_EXIT
-  }
-}
+  END
+END

@@ -31,18 +31,6 @@ void *GrowMem(void *block, DWORD dwSize) {
 
 /* == STRING ROUTINES ====================================================== */
 
-TCHAR *StDup(TCHAR *str) {
-TCHAR *result;
-  result = NULL;
-  if (str) {
-    result = STR_ALLOC(lstrlen(str));
-    if (result) {
-      lstrcpy(result, str);
-    }
-  }
-  return(result);
-}
-
 void StTrim(TCHAR *str) {
 DWORD i, s, e;
   if (str) {
@@ -90,5 +78,26 @@ int sz;
     GetWindowText(wnd, result, sz + 1);
     result[sz] = 0;
   }
+  return(result);
+}
+
+void URLOpenLink(HWND wnd, TCHAR *s) {
+  CoInitialize(NULL);
+  ShellExecute(wnd, NULL, s, NULL, NULL, SW_SHOWNORMAL);
+  CoUninitialize();
+}
+
+int MsgBox(HWND wnd, TCHAR *lpText, UINT uType) {
+int result;
+TCHAR *s, *t;
+  uType |= MB_TASKMODAL | MB_SETFOREGROUND | MB_TOPMOST; // 2.6
+  s = NULL;
+  if (!HIWORD(lpText)) {
+    s = LangLoadString(LOWORD(lpText));
+  }
+  t = GetWndText(wnd);
+  result = MessageBox(wnd, s ? s : lpText, t, uType);
+  if (t) { FreeMem(t); }
+  if (s) { FreeMem(s); }
   return(result);
 }

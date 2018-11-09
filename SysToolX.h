@@ -10,10 +10,11 @@ void FreeMem(void *block);
 void *GetMem(DWORD dwSize);
 void *GrowMem(void *block, DWORD dwSize);
 
-TCHAR *StDup(TCHAR *str);
 void StTrim(TCHAR *str);
 TCHAR *LangLoadString(UINT sid);
 
 TCHAR *GetWndText(HWND wnd);
+void URLOpenLink(HWND wnd, TCHAR *s);
+int MsgBox(HWND wnd, TCHAR *lpText, UINT uType);
 
 #endif

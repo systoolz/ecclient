@@ -19,9 +19,16 @@
 #define IDC_DLG_SAVEINFO 102
 
 // string
-#define IDS_ERROR_INPUT  1
-#define IDS_ERROR_NOSRV  2
-#define IDS_ERROR_NOTLS  3
-#define IDS_TEXT_FORMAT 10
+#define IDS_PROGRAM_VER   1
+#define IDS_ERROR_INPUT   2
+#define IDS_ERROR_NOSRV   3
+#define IDS_ERROR_NOTLS   4
+#define IDS_ERROR_NOHSH   5
+#define IDS_TEXT_FORMAT   6
+#define IDS_API_SITEROOT  7
+#define IDS_API_LOGINADR  8
+#define IDS_API_DINFOADR  9
+#define IDS_LNK_STATPAGE 10
+#define IDS_LNK_HOMEPAGE 11
 
 #endif

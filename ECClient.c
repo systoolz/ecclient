@@ -5,61 +5,54 @@
 #include "NetUnit.h"
 #include "resource/ECClient.h"
 
-// NFO: https://billing.novotelecom.ru/billing/user/widget/api/
-// OLD: https://billing.novotelecom.ru/billing/user/api/?method=userInfo&login=$$$&password=###
-// NEW: https://api.novotelecom.ru/billing/?method=userInfo&login=$$$&passwordHash=###
-// https://billing.novotelecom.ru/billing/user/data/widget/windows7/Novotelecom.gadget
-// "https://api.novotelecom.ru/billing/?method=userInfo&login="+login+"&passwordHash="+password+"&clientVersion=2"
+/*
+  https://api.novotelecom.ru/user/v1/login?userName=$$$&password=##
+    $$$ - contractId
+    ### = rawurlencode(base64(sha1bin(password)))
 
-static TCHAR strURLGetInfo[] = TEXT("https://api.novotelecom.ru/billing/?method=userInfo&login=%s&passwordHash=%s&clientVersion=2");
-static TCHAR strURLTheSite[] = TEXT("http://systools.losthost.org/?misc#ecclient");
-static TCHAR strURLBilling[] = TEXT("https://billing.novotelecom.ru");
-static TCHAR strTheVersion[] = TEXT("ECClient v2.5");
-// filepath must start with ".\\" (current folder)
-// or it was moved in the %SystemRoot% (C:\Windows) by default
+  https://api.novotelecom.ru/user/v1/getDynamicInfo?token=@@@
+    @@@ - token value returned by /login method above
+*/
+
+// path must starts with the ".\\" (current folder)
+// or %SystemRoot% (C:\Windows) will be used as default path
 static TCHAR strConfigFile[] = TEXT(".\\ECClient.ini");
 static TCHAR strConfigMain[] = TEXT("General");
 static TCHAR strConfigCode[] = TEXT("username");
 static TCHAR strConfigPass[] = TEXT("passhash");
-static TCHAR strEmptyValue[] = TEXT("");
+static TCHAR strTaskbarCreated[] = TEXT("TaskbarCreated");
+static TCHAR strECCWindowClass[] = TEXT("ECClientWndClass");
 
-static DWORD dwip = 0;
-static UINT WM_TASKBARCREATED = 0;
+static DWORD dwip;
+static UINT WM_TASKBARCREATED;
 static NOTIFYICONDATA nid;
 
 #define ID_TRAY_APP_ICON 5000
 #define WM_TRAYICON (WM_USER + 1)
 
-static TCHAR pass[33];
-static TCHAR code[15];
-#define CONFIG_OK (code[0] && pass[0])
+#define CODE_LEN 15
+#define PASS_LEN 85
+static TCHAR code[CODE_LEN];
+static TCHAR pass[PASS_LEN];
+#define CONFIG_OK (*code && *pass)
 
-int MsgBox(HWND wnd, TCHAR *lpText, UINT uType) {
-int result;
-TCHAR *s;
-  s = NULL;
-  if (!HIWORD(lpText)) {
-    s = LangLoadString(LOWORD(lpText));
-    lpText = s ? s : strEmptyValue;
-  }
-  result = MessageBox(wnd, lpText, strTheVersion, uType);
-  if (s) { FreeMem(s); }
-  return(result);
-}
-
-void ValidateString(TCHAR *st, BOOL bhex) {
-int i;
+void ValidateString(TCHAR *st, BOOL bpass) {
+DWORD i;
   StTrim(st);
   for (i = 0; st[i]; i++) {
-    // a lot of warnings goes here!
     if ((st[i] >= TEXT('0')) && (st[i] <= TEXT('9'))) { continue; }
-    if (bhex) {
-      // lowercase
-      st[i] |= 0x20; // v2.4
-      if ((st[i] >= TEXT('a')) && (st[i] <= TEXT('f'))) { continue; }
+    if (bpass) {
+      if ((st[i] >= TEXT('A')) && (st[i] <= TEXT('Z'))) { continue; }
+      if ((st[i] >= TEXT('a')) && (st[i] <= TEXT('z'))) { continue; }
+      // characters allowed in base64ed and rawurlencoded string
+      if (st[i] == TEXT('%')) { continue; }
+      if (st[i] == TEXT('-')) { continue; }
+      if (st[i] == TEXT('.')) { continue; }
+      if (st[i] == TEXT('_')) { continue; }
+      if (st[i] == TEXT('~')) { continue; }
     }
     // fallback through all - invalid character
-    st[0] = 0;
+    *st = 0;
     break;
   }
 }
@@ -68,9 +61,9 @@ void ValidateSettings(void) {
   ValidateString(code, FALSE);
   ValidateString(pass, TRUE);
   // something wrong - invalid number or pass or pass less then 32 characters
-  if ((!code[0]) || (!pass[0]) || (lstrlen(pass) != 32)) {
-    code[0] = 0;
-    pass[0] = 0;
+  if ((!*code) || (!*pass)) {
+    *code = 0;
+    *pass = 0;
   }
 }
 
@@ -83,21 +76,24 @@ void SaveConfigSettings(void) {
 }
 
 void ReadConfigSettings(void) {
-  code[0] = 0;
-  pass[0] = 0;
-  GetPrivateProfileString(strConfigMain, strConfigCode, strEmptyValue, code, 15, strConfigFile);
-  GetPrivateProfileString(strConfigMain, strConfigPass, strEmptyValue, pass, 33, strConfigFile);
+TCHAR x;
+  x = 0;
+  *code = 0;
+  *pass = 0;
+  GetPrivateProfileString(strConfigMain, strConfigCode, (TCHAR *) &x, code, CODE_LEN, strConfigFile);
+  GetPrivateProfileString(strConfigMain, strConfigPass, (TCHAR *) &x, pass, PASS_LEN, strConfigFile);
   ValidateSettings();
 }
 
 BOOL CALLBACK DlgPrc(HWND wnd, UINT umsg, WPARAM wparm, LPARAM lparm) {
-TCHAR *s, *h;
+TCHAR *s, b[1025];
+DWORD d;
   switch (umsg) {
 
     case WM_INITDIALOG:
       // set icons
       SendMessage(wnd, WM_SETICON,   ICON_BIG, GetClassLong((HWND) lparm, GCL_HICON));
-      SendMessage(wnd, WM_SETICON, ICON_SMALL, GetClassLong((HWND) lparm, GCL_HICON));
+      SendMessage(wnd, WM_SETICON, ICON_SMALL, GetClassLong((HWND) lparm, GCL_HICONSM));
       // need to return TRUE to set focus
       return(TRUE);
       break;
@@ -107,23 +103,40 @@ TCHAR *s, *h;
         EndDialog(wnd, 0);
       }
       if (wparm == MAKELONG(IDOK, BN_CLICKED)) {
-        code[0] = 0;
-        pass[0] = 0;
-        GetDlgItemText(wnd, IDC_DLG_USERCODE, code, 15);
+        *code = 0;
+        *pass = 0;
+        GetDlgItemText(wnd, IDC_DLG_USERCODE, code, CODE_LEN);
+        StTrim(code);
         s = GetWndText(GetDlgItem(wnd, IDC_DLG_USERPASS));
         if (s) {
-          if (s[0]) {
-            h = CalcMD5Hash((BYTE *) s, lstrlen(s));
-            if (h) {
-              lstrcpyn(pass, h, 33);
-              FreeMem(h);
-            }
-            // secure
-            ZeroMemory(s, STR_BYTES(lstrlen(s)));
+          // v2.6
+          if ((!*code) || (!*s)) {
+            d = 100;
+          } else {
+            d = GetEncodedPassword(s, pass);
           }
+          // secure
+          ZeroMemory(s, STR_BYTES(lstrlen(s)));
           FreeMem(s);
+          // check
+          if (*code && *pass && (!d)) {
+            EndDialog(wnd, (IsDlgButtonChecked(wnd, IDC_DLG_SAVEINFO) == BST_CHECKED) ? 2 : 1);
+          } else {
+            *code = 0;
+            *pass = 0;
+            if (d == 100) {
+              MsgBox(wnd, MAKEINTRESOURCE(IDS_ERROR_INPUT), MB_OK | MB_ICONERROR);
+            } else {
+              s = LangLoadString(IDS_ERROR_NOHSH);
+              if (s) {
+                wsprintf(b, s, d);
+                FreeMem(s);
+                MsgBox(wnd, b, MB_OK | MB_ICONERROR);
+              }
+            }
+          }
+          SetFocus(GetDlgItem(wnd, IDC_DLG_USERCODE));
         }
-        EndDialog(wnd, (IsDlgButtonChecked(wnd, IDC_DLG_SAVEINFO) == BST_CHECKED) ? 2 : 1);
       }
       break;
 
@@ -138,7 +151,7 @@ TCHAR *x;
   if (buf && fmt && page) {
     i = 0;
     j = 0;
-    while ((i < 1024) && fmt[i]) {
+    while ((i < 1025) && fmt[i]) {
       i++;
       if (fmt[i - 1] == TEXT('#')) {
         k = 0;
@@ -150,7 +163,7 @@ TCHAR *x;
           fmt[i] = 0;
           x = XMLGetValue(&fmt[i - k], page);
           if (x) {
-            lstrcpyn(&buf[j], x, 1024 - j);
+            lstrcpyn(&buf[j], x, 1025 - j);
             FreeMem(x);
             j = lstrlen(buf);
           }
@@ -167,49 +180,93 @@ TCHAR *x;
   }
 }
 
-int ShowBalance(HWND wnd) {
-TCHAR *fmt, *page, *err;
-TCHAR buf[1024];
-DWORD bsz, result;
-  result = 3;
-  fmt = LangLoadString(IDS_TEXT_FORMAT);
-  if (fmt) {
-    result = 1;
-    ValidateSettings();
-    if (CONFIG_OK) {
-      result = 2;
-      bsz = 0;
-      wsprintf(buf, strURLGetInfo, code, pass);
-      page = (TCHAR *) HTTPSGetContent(buf, &bsz);
-      // secure
-      ZeroMemory(buf, STR_BYTES(1024)); // v2.4
-#ifdef UNICODE
-      so you want an unicode build huh
-      well you can get it just dont forget to
-      convert page from ANSI to UNICODE
-      I dont do it cause it is ANSI build
-      and I didnt test UNICODE but should work fine
-#endif
-      if (page) {
-        err = XMLGetValue(TEXT("errorCode"), page);
-        if (err) {
-          result = 1;
-          // check for right login/password
-          if (err[0] == TEXT('0') && (!err[1])) {
-            buf[0] = 0;
-            FillBalanceTemplate(buf, fmt, page);
-            MsgBox(wnd, buf, MB_OK | MB_ICONINFORMATION);
-            result = 0;
-          }
-          FreeMem(err);
-        }
-        FreeMem(page);
-      } else {
-        // v2.3
-        result += bsz;
+// v2.6
+void FromUTF8(TCHAR *s) {
+WCHAR *t;
+int sz;
+  if (s && *s) {
+    sz = MultiByteToWideChar(CP_UTF8, 0, s, -1, NULL, 0);
+    // sz - size in characters including null terminator
+    if (sz > 0) {
+      t = (WCHAR *) GetMem(sz * sizeof(t[0]));
+      if (t) {
+        MultiByteToWideChar(CP_UTF8, 0, s, -1, t, sz);
+        // can be converted inplace since UTF-8 string longer than ANSI
+        WideCharToMultiByte(CP_ACP, 0, t, -1, s, lstrlen(s) + 1, NULL, NULL);
+        FreeMem(t);
       }
     }
-    FreeMem(fmt);
+  }
+}
+
+DWORD ShowBalance(HWND wnd) {
+TCHAR *fmt, *page, *s;
+// wsprintf() has limit in 1024 characters in Windows 98
+// and 1025 since Windows XP (NT4?, 2000?)
+// because we have two formats - from buf[0] and buf[bp]
+// doubling string buffer size should be enough for anything
+TCHAR buf[1025 * 2];
+DWORD bp, bsz, result;
+  result = 1;
+  ValidateSettings();
+  if (CONFIG_OK) {
+    *buf = 0;
+    // load root part like
+    fmt = LangLoadString(IDS_API_SITEROOT);
+    if (fmt) {
+      lstrcpyn(buf, fmt, 1025);
+      FreeMem(fmt);
+      bp = lstrlen(buf);
+      // load token part
+      fmt = LangLoadString(IDS_API_LOGINADR);
+      if (fmt) {
+        // merge
+        wsprintf(&buf[bp], fmt, code, pass);
+        FreeMem(fmt);
+        #ifdef UNICODE
+        so you want an unicode build huh
+        well you can get it just dont forget to
+        convert page from ANSI to UNICODE
+        I dont do it cause it is ANSI build
+        and I didnt test UNICODE but should work fine
+        #endif
+        result = 2;
+        page = (TCHAR *) HTTPGetContent(buf, &bsz);
+        if (page) {
+          result = 1;
+          s = XMLGetValue(TEXT("token"), page);
+          FreeMem(page);
+          if (s) {
+            result = 2;
+            // load info part
+            fmt = LangLoadString(IDS_API_DINFOADR);
+            if (fmt) {
+              wsprintf(&buf[bp], fmt, s);
+              FreeMem(fmt);
+            }
+            FreeMem(s);
+            page = (TCHAR *) HTTPGetContent(buf, &bsz);
+            if (page) {
+              FromUTF8(page);
+              *buf = 0;
+              fmt = LangLoadString(IDS_TEXT_FORMAT);
+              if (fmt) {
+                FillBalanceTemplate(buf, fmt, page);
+                FreeMem(fmt);
+              }
+              FreeMem(page);
+              if (*buf) {
+                MsgBox(wnd, buf, MB_OK | MB_ICONINFORMATION);
+                result = 0;
+              }
+            }
+          }
+        } else {
+          // v2.3
+          result += bsz;
+        }
+      }
+    }
   }
   return(result);
 }
@@ -244,8 +301,8 @@ int res;
     }
   }
   // secure
-  ZeroMemory(code, STR_BYTES(15));
-  ZeroMemory(pass, STR_BYTES(33));
+  ZeroMemory(code, STR_BYTES(CODE_LEN));
+  ZeroMemory(pass, STR_BYTES(PASS_LEN));
 }
 
 void UpdateNetworkInfo(void) {
@@ -264,15 +321,15 @@ void InitNotifyIconData(HWND wnd) {
   nid.uID    = ID_TRAY_APP_ICON;
   nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
   nid.uCallbackMessage = WM_TRAYICON;
-  nid.hIcon  = (HICON) GetClassLong(wnd, GCL_HICON);
+  nid.hIcon  = (HICON) GetClassLong(wnd, GCL_HICONSM);
 }
 
 // v2.4
 // PATCH: after working with the main program window
 // it will be still visible for short time by Alt+Tab
 void HideWnd(HWND wnd) {
-  ShowWindow(wnd, SW_SHOWNORMAL);
-  ShowWindow(wnd, SW_HIDE);
+  // v2.6
+  SetWindowPos(wnd, HWND_BOTTOM, 0, 0, 0, 0, SWP_HIDEWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
 }
 
 // v2.4
@@ -302,13 +359,26 @@ DWORD i, tk;
 
 LRESULT CALLBACK WndProc(HWND wnd, UINT umsg, WPARAM wparm, LPARAM lparm) {
 POINT pt;
+TCHAR *s;
   switch (umsg) {
 
     case WM_CREATE:
-      dwip = GetExternalIPAddr(&strURLBilling[8]);
+      // v2.6
+      s = LangLoadString(IDS_PROGRAM_VER);
+      if (s) {
+        SetWindowText(wnd, s);
+        FreeMem(s);
+      }
+      s = LangLoadString(IDS_LNK_STATPAGE);
+      if (s) {
+        dwip = GetExternalIPAddr(&s[8]);
+        FreeMem(s);
+      }
       InitNotifyIconData(wnd);
       UpdateNetworkInfo();
       DoNotifyIcon(NIM_ADD, &nid);
+      // v2.6
+      SetWindowLong(wnd, GWL_USERDATA, 0);
       break;
 
     case WM_TRAYICON:
@@ -325,8 +395,8 @@ POINT pt;
             break;
           case WM_RBUTTONDOWN:
             // show popup menu
-            SetForegroundWindow(wnd);
             GetCursorPos(&pt);
+            SetForegroundWindow(wnd);
             TrackPopupMenu(GetSubMenu(GetMenu(wnd), 0), 0, pt.x, pt.y, 0, wnd, NULL);
             HideWnd(wnd); // v2.4
             break;
@@ -344,18 +414,22 @@ POINT pt;
         // open site
         case IDI_TRAY_CONTEXT_MENU_SITE:
         case IDI_TRAY_CONTEXT_MENU_ROOT:
-          // if you don't do Co(Un)Initialize - ShellExecute() won't work
-          // Windows NT 5.x+ restriction
-          CoInitialize(NULL);
-          ShellExecute(0, TEXT("open"),
-            (LOWORD(wparm) == IDI_TRAY_CONTEXT_MENU_SITE) ? strURLBilling : strURLTheSite,
-            NULL, NULL, SW_SHOWNORMAL
-          );
-          CoUninitialize();
+          // v2.6
+          s = LangLoadString((LOWORD(wparm) == IDI_TRAY_CONTEXT_MENU_SITE) ? IDS_LNK_STATPAGE : IDS_LNK_HOMEPAGE);
+          if (s) {
+            URLOpenLink(0, s);
+            FreeMem(s);
+          }
           break;
         case IDI_TRAY_CONTEXT_MENU_INFO:
-          ShowUserBalance(wnd);
-          HideWnd(wnd); // v2.4
+          // v2.6 only one balance dialog
+          SetForegroundWindow(wnd);
+          if (!GetWindowLong(wnd, GWL_USERDATA)) {
+            SetWindowLong(wnd, GWL_USERDATA, 1);
+            ShowUserBalance(wnd);
+            HideWnd(wnd); // v2.4
+            SetWindowLong(wnd, GWL_USERDATA, 0);
+          }
           break;
       }
       break;
@@ -385,14 +459,14 @@ HWND hw;
   InitCommonControls();
 
   // need this to restore tray icon when Explorer.exe crashes
-  WM_TASKBARCREATED = RegisterWindowMessage(TEXT("TaskbarCreated"));
+  WM_TASKBARCREATED = RegisterWindowMessage(strTaskbarCreated);
 
   // http://msdn.microsoft.com/en-US/library/vstudio/bb384843.aspx
   ZeroMemory(&wcex, sizeof(wcex));
   wcex.cbSize        = sizeof(wcex);
   wcex.lpfnWndProc   = &WndProc;
   wcex.hInstance     = GetModuleHandle(NULL);
-  wcex.lpszClassName = TEXT("ECClientWndClass");
+  wcex.lpszClassName = strECCWindowClass;
   wcex.lpszMenuName  = MAKEINTRESOURCE(IDM_TRAYMENU);
   wcex.hIcon         = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(1));
 #ifdef SHOW_MAIN_WND
@@ -402,7 +476,7 @@ HWND hw;
 #endif
 
   // only one instance allowed
-  hw = FindWindow(wcex.lpszClassName, wcex.lpszClassName);
+  hw = FindWindow(wcex.lpszClassName, NULL);
   if (hw) {
     SendMessage(hw, WM_CLOSE, 0, 0);
   }
@@ -413,7 +487,7 @@ HWND hw;
   }
 
   // create window
-  CreateWindowEx(
+  hw = CreateWindowEx(
     0, wcex.lpszClassName, wcex.lpszClassName,
 #ifdef SHOW_MAIN_WND
     WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
@@ -427,9 +501,12 @@ HWND hw;
     wcex.hInstance, NULL
   );
 
-  while (GetMessage(&wmsg, 0, 0, 0)) {
-    TranslateMessage(&wmsg);
-    DispatchMessage(&wmsg);
+  // v2.6 window created
+  if (hw) {
+    while (GetMessage(&wmsg, 0, 0, 0)) {
+      TranslateMessage(&wmsg);
+      DispatchMessage(&wmsg);
+    }
   }
 
   UnregisterClass(wcex.lpszClassName, wcex.hInstance);
